@@ -1,0 +1,4 @@
+0x34EFD876 sceIoWrite
+0xC70B8886 sceIoClose
+0xFDB32293 sceIoRead
+0x6C60AC61 sceIoOpen
