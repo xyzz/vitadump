@@ -178,7 +178,7 @@ def find_strings():
         end = start
         while ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
             end += 1
-        if end - start > 5 and not isCode(seg_start + start):
+        if end - start > 5 and not isCode(GetFlags(seg_start + start)):
             string_addrs.add(seg_start + start)
             MakeStr(seg_start + start, BADADDR)
         start = end + 1
