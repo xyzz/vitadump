@@ -219,8 +219,8 @@ def main():
     load_nids(os.path.join(path, "nids.txt"))
 
     find_modules()
-    find_strings()
     Wait()
+    find_strings()
     add_string_xrefs()
 
 
