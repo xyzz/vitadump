@@ -77,6 +77,20 @@ def resolve_nid(nid):
 
 used_names = dict()
 
+def rename_function(ea, name, suffix):
+    """
+        Renames a function, optionally adding a _XX suffix to make sure
+        all names are unique.
+    """
+    name = name + suffix
+    if name in used_names:
+        used_names[name] += 1
+        name += "_{}".format(used_names[name])
+    else:
+        used_names[name] = 0
+
+    MakeName(ea, name)
+
 def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name_suffix=""):
     if num_funcs == 0:
         return
@@ -95,14 +109,8 @@ def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name
         actual_name = name = resolve_nid(nid)
         if not name:
             name = "{}_{:08X}".format(libname, nid)
-        name = name + name_suffix
-        if name in used_names:
-            used_names[name] += 1
-            name += "_{}".format(used_names[name])
-        else:
-            used_names[name] = 0
 
-        MakeName(func, name)
+        rename_function(func, name, name_suffix)
 
         # add a comment to mangled functions with demangled name, but only for imports
         # or otherwise when ida wouldn't do it itself because of non empty suffix
@@ -217,6 +225,37 @@ def add_xrefs():
                 OpOff(addr, 1, 0)
 
 
+def remove_chunks(ea):
+    """
+        Remove chunks from imported functions because they make no sense.
+    """
+    chunks = list(Chunks(ea))
+    if len(chunks) > 1:
+        for chunk in chunks:
+            if chunk[0] != ea:
+                RemoveFchunk(ea, chunk[0])
+                MakeFunction(chunk[0])
+        Wait()
+
+
+def resolve_local_nids():
+    """
+        Finds resolved imported functions and renames them to actual names,
+        if the module that provides that function is available and loaded.
+        Only works for user-level imports.
+    """
+    ea = NextFunction(NextAddr(0))
+    while ea != 0xFFFFFFFF:
+        next = NextHead(ea)
+        if GetMnem(ea) == "MOV" and GetMnem(next) == "BX" and GetOpnd(ea, 0) == "R12":
+            remove_chunks(ea)
+            faddr = GetOperandValue(ea, 1) & 0xFFFFFFFE
+            actual_name = GetFunctionName(faddr)
+            if actual_name and not actual_name.startswith("sub_"):
+                rename_function(ea, actual_name, "_imp")
+        ea = NextFunction(ea)
+
+
 def main():
     path = os.path.dirname(os.path.realpath(__file__))
     load_nids(os.path.join(path, "nids.txt"))
@@ -225,6 +264,7 @@ def main():
     Wait()
     find_strings()
     add_xrefs()
+    resolve_local_nids()
 
 
 if __name__ == "__main__":
