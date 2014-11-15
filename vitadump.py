@@ -33,7 +33,7 @@ def u16(s):
     return struct.unpack("<H", s)[0]
 
 
-def read_cstring(addr):
+def read_cstring(addr, max_len=0):
     s = ""
     ea = addr
     while True:
@@ -42,6 +42,8 @@ def read_cstring(addr):
             break
         ea += 1
         s += chr(c)
+        if max_len and len(s) > max_len:
+            break
     return s
 
 
@@ -97,6 +99,11 @@ def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name
 
     nids = GetManyBytes(nid_table_addr, 4 * num_funcs)
     funcs = GetManyBytes(entry_table_addr, 4 * num_funcs)
+
+    if not nids or not funcs:
+        print "NID table at 0x{0:x} is not supported, bailing out!".format(nid_table_addr)
+        return
+
     for nid, func in zip(chunk(nids, 4), chunk(funcs, 4)):
         nid = u32(nid)
         func = u32(func)
@@ -127,7 +134,7 @@ def process_export(exp_addr, libname):
     entry_table = u32(exp[EXPORT_ENTRY_TABLE_OFF:EXPORT_ENTRY_TABLE_OFF+4])
     libname_addr = u32(exp[EXPORT_LIBNAME_OFF:EXPORT_LIBNAME_OFF+4])
     if libname_addr:
-        libname = read_cstring(libname_addr)
+        libname = read_cstring(libname_addr, 255)
         
     process_nid_table(nid_table, entry_table, num_funcs, libname)
 
@@ -138,9 +145,11 @@ def process_import(imp_addr):
     nid_table = u32(imp[IMPORT_NID_TABLE_OFF:IMPORT_NID_TABLE_OFF+4])
     entry_table = u32(imp[IMPORT_ENTRY_TABLE_OFF:IMPORT_ENTRY_TABLE_OFF+4])
     libname_addr = u32(imp[IMPORT_LIBNAME_OFF:IMPORT_LIBNAME_OFF+4])
-    if libname_addr:
-        libname = read_cstring(libname_addr)
 
+    if not libname_addr:
+        return
+
+    libname = read_cstring(libname_addr, 255)
     process_nid_table(nid_table, entry_table, num_funcs, libname, "_imp")
 
 
@@ -166,27 +175,33 @@ def process_module(module_info_addr):
 
 
 def find_modules():
-    start = SegStart(ScreenEA())
-    end = SegEnd(ScreenEA())
-    ea = start
+    ea = 0
     haystack = "\x00\x00\x01\x01Sce"
-    while ea < end:
+    while ea != BADADDR:
+        ea = NextAddr(ea)
         if GetManyBytes(ea, len(haystack)) == haystack:
             process_module(ea)
-        ea += 4
 
 def find_strings():
-    seg_start, seg_end = SegStart(ScreenEA()), SegEnd(ScreenEA())
-    bytes = GetManyBytes(seg_start, seg_end - seg_start)
+    seg_start = seg_end = 0
 
-    start = 0
-    while start < len(bytes):
-        end = start
-        while ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
-            end += 1
-        if end - start > 5 and not isCode(GetFlags(seg_start + start)):
-            MakeStr(seg_start + start, BADADDR)
-        start = end + 1
+    while seg_start != BADADDR:
+        seg_start = NextSeg(seg_start)
+        seg_end = SegEnd(seg_start)
+
+        bytes = GetManyBytes(seg_start, seg_end - seg_start)
+
+        if not bytes:
+            continue
+
+        start = 0
+        while start < len(bytes):
+            end = start
+            while ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
+                end += 1
+            if end - start > 5 and not isCode(GetFlags(seg_start + start)):
+                MakeStr(seg_start + start, BADADDR)
+            start = end + 1
 
 
 def add_xrefs():
@@ -194,9 +209,10 @@ def add_xrefs():
         Searches for MOV / MOVT pair, probably separated by few instructions,
         and adds xrefs to things that look like addresses
     """
-    heads = Heads(SegStart(ScreenEA()), SegEnd(ScreenEA()))
+    addr = 0
     funcCalls = []
-    for addr in heads:
+    while addr != BADADDR:
+        addr = NextHead(addr)
         if GetMnem(addr) == "MOV":
             reg = GetOpnd(addr, 0)
             if GetOpnd(addr, 1)[0] != "#":
