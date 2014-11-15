@@ -197,7 +197,7 @@ def find_strings():
         start = 0
         while start < len(bytes):
             end = start
-            while ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
+            while end < len(bytes) and ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
                 end += 1
             if end - start > 5 and not isCode(GetFlags(seg_start + start)):
                 MakeStr(seg_start + start, BADADDR)
