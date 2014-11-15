@@ -167,8 +167,6 @@ def find_modules():
             process_module(ea)
         ea += 4
 
-string_addrs = set()
-
 def find_strings():
     seg_start, seg_end = SegStart(ScreenEA()), SegEnd(ScreenEA())
     bytes = GetManyBytes(seg_start, seg_end - seg_start)
@@ -179,15 +177,14 @@ def find_strings():
         while ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
             end += 1
         if end - start > 5 and not isCode(GetFlags(seg_start + start)):
-            string_addrs.add(seg_start + start)
             MakeStr(seg_start + start, BADADDR)
         start = end + 1
 
 
-def add_string_xrefs():
+def add_xrefs():
     """
         Searches for MOV / MOVT pair, probably separated by few instructions,
-        and adds xrefs to strings specified in string_addrs
+        and adds xrefs to things that look like addresses
     """
     heads = Heads(SegStart(ScreenEA()), SegEnd(ScreenEA()))
     funcCalls = []
@@ -199,7 +196,7 @@ def add_string_xrefs():
             val = GetOperandValue(addr, 1)
             found = False
             next_addr = addr
-            for x in range(5):
+            for x in range(16):
                 next_addr = NextHead(next_addr)
                 if GetMnem(next_addr) in ["B", "BX", "BL", "BLX"]:
                     break
@@ -210,8 +207,14 @@ def add_string_xrefs():
                     break
                 if GetOpnd(next_addr, 0) == reg or GetOpnd(next_addr, 1) == reg:
                     break
-            if val in string_addrs:
-                add_dref(next_addr if found else addr, val, XREF_USER | dr_O)
+            if val & 0xFFFF0000 == 0:
+                continue
+            if found:
+                # pair of MOV/MOVT
+                OpOffEx(next_addr, 1, REF_HIGH16, val, 0, 0)
+            else:
+                # a single MOV instruction
+                OpOff(addr, 1, 0)
 
 
 def main():
@@ -221,7 +224,7 @@ def main():
     find_modules()
     Wait()
     find_strings()
-    add_string_xrefs()
+    add_xrefs()
 
 
 if __name__ == "__main__":
