@@ -179,8 +179,17 @@ def find_modules():
     haystack = "\x00\x00\x01\x01Sce"
     while ea != BADADDR:
         ea = NextAddr(ea)
-        if GetManyBytes(ea, len(haystack)) == haystack:
-            process_module(ea)
+        seg_start = NextSeg(ea)
+        seg_end = SegEnd(seg_start)
+        data = GetManyBytes(seg_start, seg_end - seg_start)
+        if not data:
+            break
+        ea = seg_end
+        pos = data.find(haystack)
+        while pos != -1:
+            process_module(seg_start + pos)
+            pos = data.find(haystack, pos + 1)
+
 
 def find_strings():
     seg_start = seg_end = 0
