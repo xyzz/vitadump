@@ -25,12 +25,12 @@ IMPORT_NID_TABLE_OFF = 0x1c
 IMPORT_ENTRY_TABLE_OFF = 0x20
 
 
-def u32(s):
-    return struct.unpack("<I", s)[0]
+def u32(bytes, start=0):
+    return struct.unpack("<I", bytes[start:start + 4])[0]
 
 
-def u16(s):
-    return struct.unpack("<H", s)[0]
+def u16(bytes, start=0):
+    return struct.unpack("<H", bytes[start:start + 2])[0]
 
 
 def read_cstring(addr, max_len=0):
@@ -129,10 +129,10 @@ def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name
 
 def process_export(exp_addr, libname):
     exp = GetManyBytes(exp_addr, EXPORT_SIZE)
-    num_funcs = u16(exp[EXPORT_NUM_FUNCS_OFF:EXPORT_NUM_FUNCS_OFF+2])
-    nid_table = u32(exp[EXPORT_NID_TABLE_OFF:EXPORT_NID_TABLE_OFF+4])
-    entry_table = u32(exp[EXPORT_ENTRY_TABLE_OFF:EXPORT_ENTRY_TABLE_OFF+4])
-    libname_addr = u32(exp[EXPORT_LIBNAME_OFF:EXPORT_LIBNAME_OFF+4])
+    num_funcs = u16(exp, EXPORT_NUM_FUNCS_OFF)
+    nid_table = u32(exp, EXPORT_NID_TABLE_OFF)
+    entry_table = u32(exp, EXPORT_ENTRY_TABLE_OFF)
+    libname_addr = u32(exp, EXPORT_LIBNAME_OFF)
     if libname_addr:
         libname = read_cstring(libname_addr, 255)
         
@@ -141,10 +141,10 @@ def process_export(exp_addr, libname):
 
 def process_import(imp_addr):
     imp = GetManyBytes(imp_addr, IMPORT_SIZE)
-    num_funcs = u16(imp[IMPORT_NUM_FUNCS_OFF:IMPORT_NUM_FUNCS_OFF+2])
-    nid_table = u32(imp[IMPORT_NID_TABLE_OFF:IMPORT_NID_TABLE_OFF+4])
-    entry_table = u32(imp[IMPORT_ENTRY_TABLE_OFF:IMPORT_ENTRY_TABLE_OFF+4])
-    libname_addr = u32(imp[IMPORT_LIBNAME_OFF:IMPORT_LIBNAME_OFF+4])
+    num_funcs = u16(imp, IMPORT_NUM_FUNCS_OFF)
+    nid_table = u32(imp, IMPORT_NID_TABLE_OFF)
+    entry_table = u32(imp, IMPORT_ENTRY_TABLE_OFF)
+    libname_addr = u32(imp, IMPORT_LIBNAME_OFF)
 
     if not libname_addr:
         return
@@ -156,11 +156,11 @@ def process_import(imp_addr):
 def process_module(module_info_addr):
     module_info = GetManyBytes(module_info_addr, INFO_SIZE)
     name = module_info[NAME_OFF:NAME_OFF+NAME_LEN].strip("\x00")
-    ent_top = u32(module_info[ENT_TOP_OFF:ENT_TOP_OFF+4])
-    ent_end = u32(module_info[ENT_END_OFF:ENT_END_OFF+4])
+    ent_top = u32(module_info, ENT_TOP_OFF)
+    ent_end = u32(module_info, ENT_END_OFF)
     ent_cnt = (ent_end - ent_top) / EXPORT_SIZE
-    stub_top = u32(module_info[STUB_TOP_OFF:STUB_TOP_OFF+4])
-    stub_end = u32(module_info[STUB_END_OFF:STUB_END_OFF+4])
+    stub_top = u32(module_info, STUB_TOP_OFF)
+    stub_end = u32(module_info, STUB_END_OFF)
     stub_cnt = (stub_end - stub_top) / IMPORT_SIZE
     print "Module {} | {} exports, {} imports".format(name, ent_cnt, stub_cnt)
 
