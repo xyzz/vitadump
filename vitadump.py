@@ -12,17 +12,18 @@ ENT_END_OFF = 0x28
 STUB_TOP_OFF = 0x2c
 STUB_END_OFF = 0x30
 
-EXPORT_SIZE = 0x20
 EXPORT_NUM_FUNCS_OFF = 0x6
 EXPORT_LIBNAME_OFF = 0x14
 EXPORT_NID_TABLE_OFF = 0x18
 EXPORT_ENTRY_TABLE_OFF = 0x1c
 
-IMPORT_SIZE = 0x34
 IMPORT_NUM_FUNCS_OFF = 0x6
 IMPORT_LIBNAME_OFF = 0x14
+IMPORT_LIBNAME_OFF2 = 0x10
 IMPORT_NID_TABLE_OFF = 0x1c
+IMPORT_NID_TABLE_OFF2 = 0x14
 IMPORT_ENTRY_TABLE_OFF = 0x20
+IMPORT_ENTRY_TABLE_OFF2 = 0x18
 
 
 def u32(bytes, start=0):
@@ -127,24 +128,22 @@ def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name
                 SetFunctionCmt(func, demangled, 1)
 
 
-def process_export(exp_addr, libname):
-    exp = GetManyBytes(exp_addr, EXPORT_SIZE)
+def process_export(exp, libname):
     num_funcs = u16(exp, EXPORT_NUM_FUNCS_OFF)
     nid_table = u32(exp, EXPORT_NID_TABLE_OFF)
     entry_table = u32(exp, EXPORT_ENTRY_TABLE_OFF)
     libname_addr = u32(exp, EXPORT_LIBNAME_OFF)
     if libname_addr:
         libname = read_cstring(libname_addr, 255)
-        
+
     process_nid_table(nid_table, entry_table, num_funcs, libname)
 
 
-def process_import(imp_addr):
-    imp = GetManyBytes(imp_addr, IMPORT_SIZE)
+def process_import(imp):
     num_funcs = u16(imp, IMPORT_NUM_FUNCS_OFF)
-    nid_table = u32(imp, IMPORT_NID_TABLE_OFF)
-    entry_table = u32(imp, IMPORT_ENTRY_TABLE_OFF)
-    libname_addr = u32(imp, IMPORT_LIBNAME_OFF)
+    nid_table = u32(imp, IMPORT_NID_TABLE_OFF if len(imp) == 0x34 else IMPORT_NID_TABLE_OFF2)
+    entry_table = u32(imp, IMPORT_ENTRY_TABLE_OFF if len(imp) == 0x34 else IMPORT_ENTRY_TABLE_OFF2)
+    libname_addr = u32(imp, IMPORT_LIBNAME_OFF if len(imp) == 0x34 else IMPORT_LIBNAME_OFF2)
 
     if not libname_addr:
         return
@@ -158,20 +157,23 @@ def process_module(module_info_addr):
     name = module_info[NAME_OFF:NAME_OFF+NAME_LEN].strip("\x00")
     ent_top = u32(module_info, ENT_TOP_OFF)
     ent_end = u32(module_info, ENT_END_OFF)
-    ent_cnt = (ent_end - ent_top) / EXPORT_SIZE
+    ent_len = ent_end - ent_top
     stub_top = u32(module_info, STUB_TOP_OFF)
     stub_end = u32(module_info, STUB_END_OFF)
-    stub_cnt = (stub_end - stub_top) / IMPORT_SIZE
-    print "Module {} | {} exports, {} imports".format(name, ent_cnt, stub_cnt)
+    stub_len = stub_end - stub_top
+    print "Library {}".format(name)
 
-    addr = module_info_addr + INFO_SIZE
-    for x in range(ent_cnt):
-        process_export(addr, name)
-        addr += EXPORT_SIZE
+    base_addr = addr = module_info_addr + INFO_SIZE
+    while addr - base_addr < ent_end - ent_top:
+        size = u16(GetManyBytes(addr, 2))
+        process_export(GetManyBytes(addr, size), name)
+        addr += size
 
-    for x in range(stub_cnt):
-        process_import(addr)
-        addr += IMPORT_SIZE
+    base_addr = addr
+    while addr - base_addr < stub_end - stub_top:
+        size = u16(GetManyBytes(addr, 2))
+        process_import(GetManyBytes(addr, size))
+        addr += size
 
 
 def find_modules():
