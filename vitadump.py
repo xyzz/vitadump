@@ -13,6 +13,7 @@ STUB_TOP_OFF = 0x2c
 STUB_END_OFF = 0x30
 
 EXPORT_NUM_FUNCS_OFF = 0x6
+EXPORT_NID_OFF = 0x10
 EXPORT_LIBNAME_OFF = 0x14
 EXPORT_NID_TABLE_OFF = 0x18
 EXPORT_ENTRY_TABLE_OFF = 0x1c
@@ -25,6 +26,8 @@ IMPORT_NID_TABLE_OFF2 = 0x14
 IMPORT_ENTRY_TABLE_OFF = 0x20
 IMPORT_ENTRY_TABLE_OFF2 = 0x18
 
+NORETURN_FUNCS = [0xB997493D, 0x391B5B74, 0x00CCE39C, 0x37691BF8, 0x2f2c6046]
+
 
 def u32(bytes, start=0):
     return struct.unpack("<I", bytes[start:start + 4])[0]
@@ -32,6 +35,10 @@ def u32(bytes, start=0):
 
 def u16(bytes, start=0):
     return struct.unpack("<H", bytes[start:start + 2])[0]
+
+
+def u8(bytes, start=0):
+    return struct.unpack("<B", bytes[start:start + 2])[0]
 
 
 def read_cstring(addr, max_len=0):
@@ -108,6 +115,7 @@ def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name
     for nid, func in zip(chunk(nids, 4), chunk(funcs, 4)):
         nid = u32(nid)
         func = u32(func)
+        print("nid {} => func {}".format(hex(nid), hex(func)))
         t_reg = func & 1  # 0 = ARM, 1 = THUMB
         func -= t_reg
         for i in range(4):
@@ -119,6 +127,9 @@ def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name
             name = "{}_{:08X}".format(libname, nid)
 
         rename_function(func, name, name_suffix)
+
+        if nid in NORETURN_FUNCS:
+            SetFunctionFlags(func, FUNC_NORET)
 
         # add a comment to mangled functions with demangled name, but only for imports
         # or otherwise when ida wouldn't do it itself because of non empty suffix
@@ -133,8 +144,12 @@ def process_export(exp, libname):
     nid_table = u32(exp, EXPORT_NID_TABLE_OFF)
     entry_table = u32(exp, EXPORT_ENTRY_TABLE_OFF)
     libname_addr = u32(exp, EXPORT_LIBNAME_OFF)
+    nid = u32(exp, EXPORT_NID_OFF)
+    libname = ""
     if libname_addr:
         libname = read_cstring(libname_addr, 255)
+
+    print "{} with NID 0x{:x}".format(libname, nid)
 
     process_nid_table(nid_table, entry_table, num_funcs, libname)
 
@@ -149,7 +164,7 @@ def process_import(imp):
         return
 
     libname = read_cstring(libname_addr, 255)
-    process_nid_table(nid_table, entry_table, num_funcs, libname, "_imp")
+    process_nid_table(nid_table, entry_table, num_funcs, libname, "_imp_")
 
 
 def process_module(module_info_addr):
@@ -161,28 +176,48 @@ def process_module(module_info_addr):
     stub_top = u32(module_info, STUB_TOP_OFF)
     stub_end = u32(module_info, STUB_END_OFF)
     stub_len = stub_end - stub_top
-    print "Library {}".format(name)
+    print "Library {} {}".format(name, hex(module_info_addr))
 
+    exports = []
     base_addr = addr = module_info_addr + INFO_SIZE
     while addr - base_addr < ent_end - ent_top:
-        size = u16(GetManyBytes(addr, 2))
-        process_export(GetManyBytes(addr, size), name)
+        size = u8(GetManyBytes(addr, 1))
+        exports.append((addr, size))
         addr += size
 
+    imports = []
     base_addr = addr
     while addr - base_addr < stub_end - stub_top:
-        size = u16(GetManyBytes(addr, 2))
-        process_import(GetManyBytes(addr, size))
+        size = u8(GetManyBytes(addr, 1))
+        imports.append((addr, size))
         addr += size
 
+    # We need to process imports first so that noreturn functions are found
+    for addr, size in imports:
+        process_import(GetManyBytes(addr, size))
+    for addr, size in exports:
+        process_export(GetManyBytes(addr, size), name)
+
+
+def find_modules_with_string(haystack, off):
+    ea = 0
+    c = " ".join(chunk(haystack.encode("hex"), 2))
+    while ea != BADADDR:
+        ea = FindBinary(ea, SEARCH_DOWN | SEARCH_CASE, c)
+        if ea != BADADDR:
+            process_module(ea + off)
+        ea = NextAddr(ea)
 
 def find_modules():
-    ea = 0
-    haystack = "\x00\x00\x01\x01Sce"
-    while ea != BADADDR:
-        ea = NextAddr(ea)
-        if GetManyBytes(ea, len(haystack)) == haystack:
-            process_module(ea)
+    module_heur = [
+        ("\x00\x00\x01Sce", -1),
+        ("\x00\x01\x01Sce", -1),
+        ("\x00\x02\x01Sce", -1),
+        ("\x00\x06\x01Sce", -1),
+        ("\x00\x00\x00UnityPlayer", -1),
+    ]
+    for haystack, off in module_heur:
+        find_modules_with_string(haystack, off)
 
 def find_strings():
     seg_start = seg_end = 0
@@ -201,7 +236,7 @@ def find_strings():
             end = start
             while end < len(bytes) and ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
                 end += 1
-            if end - start > 5 and not isCode(GetFlags(seg_start + start)):
+            if end - start > 8 and not isCode(GetFlags(seg_start + start)):
                 MakeStr(seg_start + start, BADADDR)
             start = end + 1
 
@@ -278,9 +313,13 @@ def main():
     path = os.path.dirname(os.path.realpath(__file__))
     load_nids(os.path.join(path, "nids.txt"))
 
+    print("Finding modules")
     find_modules()
+    print("Waiting")
     Wait()
+    print("Finding strings")
     find_strings()
+    print("Adding xrefs")
     add_xrefs()
     resolve_local_nids()
 
