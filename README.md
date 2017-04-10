@@ -4,6 +4,12 @@ Run it like this: `python3 grabnids.py /path/to/directory/with/stubs_a/ nids.txt
 
 Or you can make your own `nids.txt` using whatever tools you've got, for example of such file see `nids.txt.example`
 
+# nidformat.py
+
+Creates a `nids.txt` from a `db.yml` so that it can be used with `vitadump.py`.
+
+Run it like this: `python3 nidformat.py /usr/local/vitasdk/share/db.yml nids.txt`
+
 # vitadump.py
 
 Just load your binary into IDA and run the script from IDA menu: `File -> Script file...`
