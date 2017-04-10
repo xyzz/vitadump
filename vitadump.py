@@ -300,7 +300,7 @@ def resolve_local_nids():
         Only works for user-level imports.
     """
     ea = NextFunction(NextAddr(0))
-    while ea != 0xFFFFFFFF:
+    while ea != BADADDR:
         next = NextHead(ea)
         if GetMnem(ea) == "MOV" and GetMnem(next) == "BX" and GetOpnd(ea, 0) == "R12":
             remove_chunks(ea)
