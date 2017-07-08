@@ -7,9 +7,17 @@ import string
 from glob import glob
 from sys import argv
 
+hardcoded_nids = [
+	("0x79F8E492", "module_stop"),
+	("0x913482A9", "module_exit"),
+	("0x935CD196", "module_start"),
+]
 
 fnids = open(argv[1])
 fout = open(argv[2], "w")
+
+for entry in hardcoded_nids:
+	fout.write("{} {}\n".format(entry[0], entry[1]))
 
 nids = yaml.safe_load(fnids)
 fnids.close()
