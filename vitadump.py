@@ -122,7 +122,7 @@ def process_nid_table(nid_table_addr, entry_table_addr, num_funcs, libname, name
         func -= t_reg
         for i in range(4):
             SetReg(func + i, "T", t_reg)
-        MakeFunction(func)
+        MakeFunction(func, BADADDR)
 
         actual_name = name = resolve_nid(nid)
         if not name:
@@ -226,7 +226,11 @@ def find_strings():
 
     while seg_start != BADADDR:
         seg_start = NextSeg(seg_start)
-        seg_end = SegEnd(seg_start)
+
+        try:
+            seg_end = SegEnd(seg_start)
+        except AssertionError:
+            continue
 
         bytes = GetManyBytes(seg_start, seg_end - seg_start)
 
@@ -239,7 +243,7 @@ def find_strings():
             while end < len(bytes) and ord(bytes[end]) >= 0x20 and ord(bytes[end]) <= 0x7e:
                 end += 1
             if end - start > 8 and not isCode(GetFlags(seg_start + start)):
-                MakeStr(seg_start + start, BADADDR)
+                idaapi.make_ascii_string(seg_start + start, 0, GetLongPrm(INF_STRTYPE))
             start = end + 1
 
 
@@ -289,7 +293,7 @@ def remove_chunks(ea):
         for chunk in chunks:
             if chunk[0] != ea:
                 RemoveFchunk(ea, chunk[0])
-                MakeFunction(chunk[0])
+                MakeFunction(chunk[0], BADADDR)
         Wait()
 
 
