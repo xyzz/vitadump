@@ -246,6 +246,11 @@ def find_strings():
                 idaapi.make_ascii_string(seg_start + start, 0, GetLongPrm(INF_STRTYPE))
             start = end + 1
 
+def is_reg_call_safe(reg):
+	if reg[0] == "R":
+		return int(reg[1:]) > 3
+	else:
+		return reg in ["LR", "SP"]
 
 def add_xrefs():
     """
@@ -253,7 +258,6 @@ def add_xrefs():
         and adds xrefs to things that look like addresses
     """
     addr = 0
-    funcCalls = []
     while addr != BADADDR:
         addr = NextHead(addr)
         if GetMnem(addr) == "MOV":
@@ -263,9 +267,9 @@ def add_xrefs():
             val = GetOperandValue(addr, 1)
             found = False
             next_addr = addr
-            for x in range(16):
+            for x in range(16): # next 16 instructions
                 next_addr = NextHead(next_addr)
-                if GetMnem(next_addr) in ["B", "BX", "BL", "BLX"]:
+                if GetMnem(next_addr) in ["B", "BX", "BL", "BLX"] and not is_reg_call_safe(reg):
                     break
                 if GetMnem(next_addr) == "MOVT" and GetOpnd(next_addr, 0) == reg:
                     if GetOpnd(next_addr, 1)[0] == "#":
@@ -278,6 +282,7 @@ def add_xrefs():
                 continue
             if found:
                 # pair of MOV/MOVT
+                OpOffEx(addr, 1, REF_LOW16, val, 0, 0)
                 OpOffEx(next_addr, 1, REF_HIGH16, val, 0, 0)
             else:
                 # a single MOV instruction
